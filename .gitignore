@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Docker
+*.log
+
+# Ansible
+*.retry
+
+# Terraform (later)
+.terraform/
+terraform.tfstate*
+crash.log
+
+# OS
+.DS_Store
+Thumbs.db
