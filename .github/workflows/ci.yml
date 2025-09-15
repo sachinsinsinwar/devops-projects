@@ -24,10 +24,10 @@ jobs:
           PYTHONPATH: .
         run: pytest -q
 
-    docker-build-push:
+  docker-build:             # <-- keep this name for branch protection
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/dev'   # only push from dev branch
+    if: github.ref == 'refs/heads/dev'   # only push from dev
     steps:
       - uses: actions/checkout@v4
 
@@ -45,4 +45,3 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/demo-api:${{ github.sha }}
             ${{ secrets.DOCKERHUB_USERNAME }}/demo-api:dev-latest
-
