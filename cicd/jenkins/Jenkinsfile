@@ -1,14 +1,21 @@
 pipeline {
   agent any
-  options { timestamps() }
+  options { skipDefaultCheckout(true); timestamps() }
+
+  environment {
+    IMAGE = "sachinsingh20/demo-api"   
+  }
+
   stages {
     stage('Checkout') {
       steps { checkout scm }
     }
-    stage('Unit Tests') {
+
+    stage('Test') {
       steps {
         dir('apps/demo_api') {
           sh '''
+            python3 -V
             python3 -m venv .venv
             . .venv/bin/activate
             pip install -r requirements.txt
@@ -17,12 +24,36 @@ pipeline {
         }
       }
     }
+
     stage('Docker Build') {
       steps {
-        dir('apps/demo_api') {
-          sh 'docker build -t demo-api:jenkins .'
-        }
+        sh """
+          docker build -t ${IMAGE}:${env.GIT_COMMIT} \
+                       -t ${IMAGE}:jenkins-latest \
+                       apps/demo_api
+        """
       }
+    }
+
+    stage('Docker Push') {
+      when { branch 'dev' }
+      environment {
+        DOCKERHUB = credentials('dockerhub')   // Jenkins username+token
+      }
+      steps {
+        sh """
+          echo "$DOCKERHUB_PSW" | docker login -u "$DOCKERHUB_USR" --password-stdin
+          docker push ${IMAGE}:${env.GIT_COMMIT}
+          docker push ${IMAGE}:jenkins-latest
+        """
+      }
+    }
+  }
+
+  post {
+    always {
+      sh 'docker logout || true'
+      cleanWs()
     }
   }
 }
