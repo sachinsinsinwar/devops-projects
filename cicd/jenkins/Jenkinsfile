@@ -1,9 +1,10 @@
 pipeline {
   agent any
-  options { skipDefaultCheckout(true); timestamps() }
+  options { timestamps() }
 
   environment {
-    IMAGE = "sachinsingh20/demo-api"   
+    IMAGE = 'sachinsingh20/demo-api'            // your Docker Hub repo
+    TAG   = "dev-${env.BUILD_NUMBER}"
   }
 
   stages {
@@ -11,49 +12,52 @@ pipeline {
       steps { checkout scm }
     }
 
+    // NEW: run tests inside a Python container (no Python needed on Jenkins)
     stage('Test') {
       steps {
         dir('apps/demo_api') {
           sh '''
-            python3 -V
-            python3 -m venv .venv
-            . .venv/bin/activate
-            pip install -r requirements.txt
-            pytest -q
+            docker run --rm \
+              -v "$PWD":/app \
+              -w /app \
+              python:3.11-slim /bin/sh -lc "
+                python --version &&
+                pip install --no-cache-dir -r requirements.txt &&
+                pytest -q
+              "
           '''
         }
       }
     }
 
-    stage('Docker Build') {
+    stage('Build image') {
       steps {
-        sh """
-          docker build -t ${IMAGE}:${env.GIT_COMMIT} \
-                       -t ${IMAGE}:jenkins-latest \
-                       apps/demo_api
-        """
+        sh '''
+          docker build -t $IMAGE:$TAG -f apps/demo_api/Dockerfile .
+          docker tag $IMAGE:$TAG $IMAGE:dev-latest
+        '''
       }
     }
 
-    stage('Docker Push') {
-      when { branch 'dev' }
-      environment {
-        DOCKERHUB = credentials('dockerhub')   // Jenkins username+token
-      }
+    stage('Push image') {
       steps {
-        sh """
-          echo "$DOCKERHUB_PSW" | docker login -u "$DOCKERHUB_USR" --password-stdin
-          docker push ${IMAGE}:${env.GIT_COMMIT}
-          docker push ${IMAGE}:jenkins-latest
-        """
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh '''
+            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+            docker push $IMAGE:$TAG
+            docker push $IMAGE:dev-latest
+            docker logout || true
+          '''
+        }
       }
     }
   }
 
   post {
-    always {
-      sh 'docker logout || true'
-      cleanWs()
-    }
+    always { sh 'docker system prune -f || true' }
   }
 }
