@@ -10,7 +10,9 @@ pipeline {
   stages {
 
     stage('Sanity') {
-      steps { sh 'echo JENKINSFILE v3 - testing inside image (no bind mounts), context=apps/demo_api' }
+      steps { 
+        sh 'echo "JENKINSFILE v3 - testing inside image (no bind mounts), context=apps/demo_api"' 
+      }
     }
 
     stage('Test in image') {
