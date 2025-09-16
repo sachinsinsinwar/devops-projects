@@ -1,45 +1,44 @@
 pipeline {
   agent any
-  options { timestamps() }
+  options { timestamps(); disableConcurrentBuilds() }
 
   environment {
-    IMAGE = 'sachinsingh20/demo-api'            // your Docker Hub repo
-    TAG   = "dev-${env.BUILD_NUMBER}"
+    IMAGE = 'sachinsingh20/demo-api'          // your Docker Hub repo
+    TAG   = "dev-${env.BUILD_NUMBER}"         // per-build dev tag
   }
 
   stages {
-    stage('Checkout') {
-      steps { checkout scm }
+
+    stage('Sanity') {
+      steps { sh 'echo JENKINSFILE v3 - testing inside image (no bind mounts), context=apps/demo_api' }
     }
 
-    // NEW: run tests inside a Python container (no Python needed on Jenkins)
-    stage('Test') {
-      steps {
-        dir('apps/demo_api') {
-          sh '''
-            docker run --rm \
-              -v "$PWD":/app \
-              -w /app \
-              python:3.11-slim /bin/sh -lc "
-                python --version &&
-                pip install --no-cache-dir -r requirements.txt &&
-                pytest -q
-              "
-          '''
-        }
-      }
-    }
-
-    stage('Build image') {
+    stage('Test in image') {
       steps {
         sh '''
-          docker build -t $IMAGE:$TAG -f apps/demo_api/Dockerfile .
-          docker tag $IMAGE:$TAG $IMAGE:dev-latest
+          set -euxo pipefail
+          # Build a test image from your app directory as the build context
+          docker build -t demo-api:test -f apps/demo_api/Dockerfile apps/demo_api
+
+          # Run sanity + tests inside the image (no host mounts)
+          docker run --rm demo-api:test python --version
+          docker run --rm demo-api:test pytest -q
         '''
       }
     }
 
-    stage('Push image') {
+    stage('Build & Tag') {
+      steps {
+        sh '''
+          set -euxo pipefail
+          # Build the final image (same context & Dockerfile)
+          docker build -t ${IMAGE}:${TAG} -f apps/demo_api/Dockerfile apps/demo_api
+          docker tag ${IMAGE}:${TAG} ${IMAGE}:dev-latest
+        '''
+      }
+    }
+
+    stage('Push') {
       steps {
         withCredentials([usernamePassword(
           credentialsId: 'dockerhub',
@@ -47,9 +46,10 @@ pipeline {
           passwordVariable: 'DOCKER_PASS'
         )]) {
           sh '''
+            set -euxo pipefail
             echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-            docker push $IMAGE:$TAG
-            docker push $IMAGE:dev-latest
+            docker push ${IMAGE}:${TAG}
+            docker push ${IMAGE}:dev-latest
             docker logout || true
           '''
         }
@@ -58,6 +58,9 @@ pipeline {
   }
 
   post {
-    always { sh 'docker system prune -f || true' }
+    always {
+      sh 'docker system prune -f || true'
+      cleanWs()
+    }
   }
 }
