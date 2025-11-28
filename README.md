@@ -1,4 +1,4 @@
-# devops-projects
+# Devops-Projects
 
 A practical, modern **DevOps → Cloud → MLOps** portfolio.
 
